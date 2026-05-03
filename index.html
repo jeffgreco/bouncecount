@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d12" />
+<title>BounceCount</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #161a22;
+    --panel2: #1f2531;
+    --fg: #e7ecf3;
+    --muted: #8693a8;
+    --accent: #ffd166;
+    --accent2: #06d6a0;
+    --danger: #ef476f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none;
+  }
+  body { display: flex; flex-direction: column; padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); }
+  header { padding: 16px 4px 8px; display: flex; align-items: center; justify-content: space-between; }
+  h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; margin: 0; color: var(--muted); }
+  .badge { font-size: 11px; padding: 4px 8px; border-radius: 999px; background: var(--panel); color: var(--muted); }
+  .badge.live { color: var(--accent2); }
+  .badge.live::before { content: "●"; margin-right: 4px; animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.3 } }
+
+  main { flex: 1; display: flex; flex-direction: column; gap: 16px; max-width: 480px; width: 100%; margin: 0 auto; }
+
+  .counter {
+    background: var(--panel); border-radius: 24px; padding: 32px 24px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 240px; position: relative; overflow: hidden;
+  }
+  .counter::after {
+    content: ""; position: absolute; inset: 0; border-radius: 24px; pointer-events: none;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+  }
+  .count {
+    font-size: 128px; font-weight: 800; line-height: 1; letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    background: linear-gradient(180deg, #fff, #b9c4d4);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    transition: transform 0.08s ease;
+  }
+  .count.flash { transform: scale(1.06); }
+  .label { color: var(--muted); font-size: 13px; margin-top: 8px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .rate { color: var(--accent); font-size: 14px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  .meter {
+    height: 8px; background: var(--panel2); border-radius: 999px; overflow: hidden; margin-top: 16px; width: 100%;
+    position: relative;
+  }
+  .meter-fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent));
+    width: 0%; transition: width 0.05s linear;
+  }
+  .meter-thresh {
+    position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--danger); opacity: 0.7;
+  }
+
+  .controls { background: var(--panel); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+  .row { display: flex; gap: 10px; align-items: center; }
+  button {
+    flex: 1; appearance: none; border: 0; cursor: pointer; padding: 14px 16px;
+    border-radius: 14px; font-size: 15px; font-weight: 600;
+    background: var(--panel2); color: var(--fg); transition: transform 0.08s, background 0.15s;
+    font-family: inherit;
+  }
+  button:active { transform: scale(0.97); }
+  button.primary { background: var(--accent2); color: #042a20; }
+  button.danger { background: transparent; color: var(--danger); }
+  button.ghost { background: transparent; color: var(--muted); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .slider-group { display: flex; flex-direction: column; gap: 6px; }
+  .slider-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; background: transparent;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; background: var(--panel2); border-radius: 2px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 22px; height: 22px;
+    border-radius: 50%; background: var(--accent); margin-top: -9px; cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+
+  .log { font-size: 12px; color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, monospace; max-height: 80px; overflow: hidden; }
+
+  footer { text-align: center; color: var(--muted); font-size: 11px; padding: 12px 0; }
+
+  .error { background: rgba(239, 71, 111, 0.12); color: #ffb3c5; padding: 12px 14px; border-radius: 12px; font-size: 13px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BounceCount</h1>
+  <span id="status" class="badge">idle</span>
+</header>
+
+<main>
+  <div class="counter">
+    <div id="count" class="count">0</div>
+    <div class="label">bounces</div>
+    <div id="rate" class="rate">—</div>
+    <div class="meter">
+      <div id="meterFill" class="meter-fill"></div>
+      <div id="meterThresh" class="meter-thresh" style="left: 30%"></div>
+    </div>
+  </div>
+
+  <div id="errorBox" class="error hidden"></div>
+
+  <div class="controls">
+    <div class="row">
+      <button id="micBtn" class="primary">Start listening</button>
+      <button id="resetBtn" class="ghost">Reset</button>
+    </div>
+    <div class="slider-group">
+      <div class="slider-label">
+        <span>Sensitivity</span>
+        <span id="sensVal">3.0×</span>
+      </div>
+      <input id="sens" type="range" min="1.5" max="6" step="0.1" value="3.0" />
+    </div>
+    <div class="row">
+      <button id="testBtn" class="ghost">Test with sample audio</button>
+    </div>
+    <div id="log" class="log"></div>
+  </div>
+</main>
+
+<footer>tap Start, then bounce</footer>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const ui = {
+    count: $('count'), rate: $('rate'), status: $('status'),
+    meterFill: $('meterFill'), meterThresh: $('meterThresh'),
+    micBtn: $('micBtn'), resetBtn: $('resetBtn'), testBtn: $('testBtn'),
+    sens: $('sens'), sensVal: $('sensVal'),
+    log: $('log'), errorBox: $('errorBox'),
+  };
+
+  // ---- Detector: stateful onset detector over RMS frames ----
+  class BounceDetector {
+    constructor() {
+      this.reset();
+    }
+    reset() {
+      this.noiseFloor = 0.001;
+      this.framesSinceBounce = 1000;
+      this.times = [];
+    }
+    // Returns true when a bounce is detected.
+    push(rms, tSeconds, opts) {
+      const sens = opts.sens;
+      const refractoryFrames = opts.refractoryFrames;
+      const absMin = opts.absMin;
+      const frameDt = opts.frameDt;
+
+      this.framesSinceBounce++;
+      let detected = false;
+      if (rms > this.noiseFloor * sens && rms > absMin && this.framesSinceBounce >= refractoryFrames) {
+        detected = true;
+        this.framesSinceBounce = 0;
+        this.times.push(tSeconds);
+      }
+      // Update noise floor only when we're not on/right after an onset.
+      if (this.framesSinceBounce > 5) {
+        this.noiseFloor = this.noiseFloor * 0.92 + rms * 0.08;
+      }
+      return detected;
+    }
+    rateBPM() {
+      if (this.times.length < 2) return null;
+      // Use last few intervals
+      const t = this.times.slice(-6);
+      const intervals = [];
+      for (let i = 1; i < t.length; i++) intervals.push(t[i] - t[i-1]);
+      intervals.sort((a,b) => a-b);
+      const median = intervals[Math.floor(intervals.length/2)];
+      return 60 / median;
+    }
+  }
+
+  // ---- App state ----
+  const state = {
+    detector: new BounceDetector(),
+    count: 0,
+    audioCtx: null,
+    analyser: null,
+    micStream: null,
+    rafId: null,
+    sourceNode: null,
+    isLive: false,
+  };
+
+  // ---- UI helpers ----
+  function setCount(n) {
+    state.count = n;
+    ui.count.textContent = n;
+    ui.count.classList.add('flash');
+    setTimeout(() => ui.count.classList.remove('flash'), 100);
+  }
+  function bumpCount() { setCount(state.count + 1); }
+  function setStatus(text, kind) {
+    ui.status.textContent = text;
+    ui.status.className = 'badge' + (kind ? ' ' + kind : '');
+  }
+  function showError(msg) {
+    if (!msg) { ui.errorBox.classList.add('hidden'); ui.errorBox.textContent = ''; return; }
+    ui.errorBox.classList.remove('hidden');
+    ui.errorBox.textContent = msg;
+  }
+  function logLine(s) {
+    ui.log.textContent = s + '\n' + ui.log.textContent;
+    if (ui.log.textContent.length > 500) ui.log.textContent = ui.log.textContent.slice(0, 500);
+  }
+
+  // ---- Live mic detection ----
+  async function startMic() {
+    try {
+      showError('');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+      state.micStream = stream;
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      state.audioCtx = ctx;
+      const src = ctx.createMediaStreamSource(stream);
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 200;
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0;
+      src.connect(hp);
+      hp.connect(analyser);
+      state.analyser = analyser;
+      state.sourceNode = src;
+      state.isLive = true;
+      ui.micBtn.textContent = 'Stop';
+      ui.micBtn.classList.remove('primary');
+      ui.micBtn.classList.add('danger');
+      setStatus('listening', 'live');
+      runLoop();
+    } catch (err) {
+      showError('Mic error: ' + err.message);
+      setStatus('idle');
+    }
+  }
+
+  function stopMic() {
+    if (state.rafId) cancelAnimationFrame(state.rafId);
+    if (state.micStream) state.micStream.getTracks().forEach(t => t.stop());
+    if (state.audioCtx) state.audioCtx.close();
+    state.micStream = null;
+    state.audioCtx = null;
+    state.analyser = null;
+    state.isLive = false;
+    ui.micBtn.textContent = 'Start listening';
+    ui.micBtn.classList.add('primary');
+    ui.micBtn.classList.remove('danger');
+    setStatus('idle');
+    ui.meterFill.style.width = '0%';
+  }
+
+  function runLoop() {
+    const sr = state.audioCtx.sampleRate;
+    const analyser = state.analyser;
+    const buf = new Float32Array(analyser.fftSize);
+    const frameDt = analyser.fftSize / sr;
+    const startTime = performance.now() / 1000;
+
+    const tick = () => {
+      analyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      const t = performance.now() / 1000 - startTime;
+      const sens = parseFloat(ui.sens.value);
+      const detected = state.detector.push(rms, t, {
+        sens,
+        refractoryFrames: Math.max(2, Math.round(0.15 / frameDt)),
+        absMin: 0.005,
+        frameDt,
+      });
+      if (detected) {
+        bumpCount();
+        const r = state.detector.rateBPM();
+        if (r) ui.rate.textContent = r.toFixed(0) + ' bpm';
+      }
+      // Meter (log scale)
+      const db = 20 * Math.log10(Math.max(rms, 1e-6));
+      const pct = Math.max(0, Math.min(100, (db + 60) * (100/60)));
+      ui.meterFill.style.width = pct.toFixed(1) + '%';
+      // Threshold marker
+      const thrDb = 20 * Math.log10(Math.max(state.detector.noiseFloor * sens, 1e-6));
+      const thrPct = Math.max(0, Math.min(100, (thrDb + 60) * (100/60)));
+      ui.meterThresh.style.left = thrPct.toFixed(1) + '%';
+
+      state.rafId = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  // ---- Sample audio test (offline) ----
+  async function runSample() {
+    try {
+      showError('');
+      setStatus('decoding…');
+      const resp = await fetch('3631 N Seeley Ave 8.m4a');
+      if (!resp.ok) throw new Error('sample file not found');
+      const arr = await resp.arrayBuffer();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const decoded = await ctx.decodeAudioData(arr);
+      ctx.close();
+
+      // Run detector offline at 10ms frames on channel 0.
+      const ch = decoded.getChannelData(0);
+      const sr = decoded.sampleRate;
+      const frame = Math.round(sr / 100); // 10ms
+      const det = new BounceDetector();
+      const sens = parseFloat(ui.sens.value);
+      const refractoryFrames = Math.round(0.15 / (frame / sr));
+      let count = 0;
+      const times = [];
+      // Simple highpass via 1-pole IIR (cutoff ~ 200 Hz)
+      const dt = 1 / sr;
+      const rc = 1 / (2 * Math.PI * 200);
+      const alpha = rc / (rc + dt);
+      let prevIn = 0, prevOut = 0;
+      const filt = new Float32Array(ch.length);
+      for (let i = 0; i < ch.length; i++) {
+        const out = alpha * (prevOut + ch[i] - prevIn);
+        filt[i] = out; prevOut = out; prevIn = ch[i];
+      }
+      for (let i = 0; i + frame <= filt.length; i += frame) {
+        let s = 0;
+        for (let j = 0; j < frame; j++) { const v = filt[i+j]; s += v*v; }
+        const rms = Math.sqrt(s / frame);
+        const t = i / sr;
+        if (det.push(rms, t, { sens, refractoryFrames, absMin: 0.005, frameDt: frame/sr })) {
+          count++;
+          times.push(t);
+        }
+      }
+      setCount(count);
+      setStatus('sample done');
+      logLine('sample: ' + count + ' bounces, t=[' + times.map(x => x.toFixed(2)).join(', ') + ']');
+    } catch (err) {
+      showError('Sample error: ' + err.message);
+      setStatus('idle');
+    }
+  }
+
+  // ---- Wire up ----
+  ui.micBtn.addEventListener('click', () => state.isLive ? stopMic() : startMic());
+  ui.resetBtn.addEventListener('click', () => {
+    state.detector.reset();
+    setCount(0);
+    ui.rate.textContent = '—';
+  });
+  ui.testBtn.addEventListener('click', runSample);
+  ui.sens.addEventListener('input', () => {
+    ui.sensVal.textContent = parseFloat(ui.sens.value).toFixed(1) + '×';
+  });
+  ui.sensVal.textContent = parseFloat(ui.sens.value).toFixed(1) + '×';
+})();
+</script>
+</body>
+</html>
